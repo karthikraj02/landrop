@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>LANDrop Air</title>
+<style>
+/* ===== BACKGROUND ===== */
+body{
+  margin:0;
+  background:radial-gradient(circle,#1f2937,#020617);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:white;
+  height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+/* ===== PANEL ===== */
+.panel{
+  text-align:center;
+  padding:40px;
+  border-radius:28px;
+  background:rgba(255,255,255,0.05);
+  backdrop-filter:blur(30px);
+  box-shadow:0 30px 80px rgba(0,0,0,0.7);
+}
+
+h1{ margin-bottom:20px; }
+
+/* ===== RADAR ===== */
+.radar{
+  position:relative;
+  width:320px;
+  height:320px;
+  margin:auto;
+  border-radius:50%;
+}
+
+.ring{
+  position:absolute;
+  border-radius:50%;
+  border:2px solid rgba(59,130,246,0.4);
+  animation:expand 3s infinite;
+}
+.ring:nth-child(1){width:120px;height:120px;top:100px;left:100px;}
+.ring:nth-child(2){width:200px;height:200px;top:60px;left:60px;animation-delay:1s;}
+.ring:nth-child(3){width:280px;height:280px;top:20px;left:20px;animation-delay:2s;}
+
+@keyframes expand{
+  0%{opacity:.8;transform:scale(.8);}
+  100%{opacity:0;transform:scale(1.1);}
+}
+
+.center{
+  position:absolute;
+  top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  font-size:42px;
+}
+
+/* ===== DEVICE BUBBLE ===== */
+.device{
+  position:absolute;
+  width:90px;
+  height:90px;
+  border-radius:50%;
+  background:rgba(255,255,255,.08);
+  backdrop-filter:blur(15px);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  transition:.25s;
+  font-size:11px;
+}
+.device:hover{
+  transform:scale(1.15);
+  background:rgba(59,130,246,.35);
+  box-shadow:0 0 20px rgba(59,130,246,.5);
+}
+
+button{
+  margin-top:20px;
+  background:linear-gradient(135deg,#60a5fa,#3b82f6);
+  border:none;
+  padding:12px 26px;
+  border-radius:10px;
+  color:white;
+  cursor:pointer;
+  font-size:16px;
+}
+
+button:hover{ opacity:0.9; }
+button:disabled{ opacity:0.5; cursor:not-allowed; }
+
+/* ===== CHAT ===== */
+#chatBox{
+  height:260px;
+  width:360px;
+  overflow:auto;
+  background:rgba(0,0,0,.4);
+  padding:12px;
+  border-radius:12px;
+  margin-bottom:12px;
+  text-align:left;
+  font-family:monospace;
+}
+
+.chat-input{
+  padding:10px;
+  width:70%;
+  border-radius:8px;
+  border:none;
+  background:rgba(255,255,255,0.1);
+  color:white;
+}
+
+.secure{
+  margin-top:10px;
+  font-size:13px;
+  opacity:.8;
+}
+
+.status{
+  position:fixed;
+  top:20px;
+  right:20px;
+  background:rgba(0,0,0,0.7);
+  padding:10px 15px;
+  border-radius:8px;
+  font-size:12px;
+}
+
+.loading{ color:#60a5fa; }
+.error{ color:#ef4444; }
+.success{ color:#10b981; }
+</style>
+</head>
+
+<body>
+<!-- ========= CONNECT SCREEN ========= -->
+<div id="connectScreen" class="panel">
+  <h1>🚀 LANDrop Air</h1>
+  
+  <div class="radar">
+    <div class="ring"></div>
+    <div class="ring"></div>
+    <div class="ring"></div>
+    <div class="center">📡</div>
+    <div id="devices"></div>
+  </div>
+
+  <button id="scanBtn" onclick="scan()">🔍 Scan Devices</button>
+  <button onclick="startReceiver()" style="background:#10b981;">📥 Start Receiver</button>
+  
+  <div class="secure">🔒 End-to-End Encrypted (Fernet AES)</div>
+</div>
+
+<!-- ========= CHAT SCREEN ========= -->
+<div id="chatScreen" class="panel" style="display:none">
+  <h2>💬 <span id="connectedName"></span></h2>
+  
+  <div id="chatBox"></div>
+  
+  <input id="chatInput" class="chat-input" placeholder="Type message..." onkeypress="if(event.key==='Enter') sendMsg()">
+  <button onclick="sendMsg()">Send 🚀</button>
+  
+  <button onclick="goBack()" style="background:#6b7280;margin-left:10px;">← Back</button>
+</div>
+
+<div id="status" class="status"></div>
+
+<script>
+let selectedDevice = null;
+const statusDiv = document.getElementById('status');
+const scanBtn = document.getElementById('scanBtn');
+
+// ===== STATUS DISPLAY =====
+function setStatus(msg, type='info') {
+  statusDiv.textContent = msg;
+  statusDiv.className = `status ${type}`;
+}
+
+// ===== START RECEIVER =====
+function startReceiver() {
+  setStatus('Starting receiver...', 'loading');
+  fetch('/api/start-receiver')
+    .then(r=>r.json())
+    .then(data=>{
+      setStatus('✅ Receiver active!', 'success');
+    })
+    .catch(e=>setStatus('❌ Receiver error', 'error'));
+}
+
+// ===== DEVICE SCAN =====
+function scan() {
+  scanBtn.disabled = true;
+  scanBtn.textContent = 'Scanning...';
+  setStatus('🔍 Scanning network...', 'loading');
+  
+  fetch('/api/scan')
+    .then(r=>r.json())
+    .then(data=>{
+      const container = document.getElementById("devices");
+      container.innerHTML = '';
+      
+      if (data.error) {
+        setStatus('❌ ' + data.error, 'error');
+        return;
+      }
+      
+      let angle = 0;
+      data.devices.forEach(device => {
+        const r = 130;
+        const x = 160 + r * Math.cos(angle);
+        const y = 160 + r * Math.sin(angle);
+        angle += 1.2;
+        
+        const d = document.createElement("div");
+        d.className = "device";
+        d.style.left = x + "px";
+        d.style.top = y + "px";
+        d.innerHTML = `💻<div>${device.name}</div><div style="font-size:9px;opacity:0.7;">${device.ip}</div>`;
+        
+        d.onclick = () => requestPair(device);
+        container.appendChild(d);
+      });
+      
+      setStatus(`Found ${data.devices.length} devices`, 'success');
+    })
+    .catch(e=>setStatus('❌ Network error: ' + e, 'error'))
+    .finally(()=>{
+      scanBtn.disabled = false;
+      scanBtn.textContent = '🔍 Scan Again';
+    });
+}
+
+// ===== PAIR REQUEST =====
+function requestPair(device) {
+  selectedDevice = device;
+  setStatus(`Selected ${device.name} (${device.ip})`, 'info');
+}
+
+// ===== SEND MESSAGE =====
+function sendMsg() {
+  if (!selectedDevice) {
+    alert('Select a device first!');
+    return;
+  }
+  
+  const text = document.getElementById("chatInput").value.trim();
+  if (!text) return;
+  
+  // Add to chat
+  const box = document.getElementById("chatBox");
+  box.innerHTML += `<div style="color:#10b981;">🟢 You: ${text}</div>`;
+  box.scrollTop = box.scrollHeight;
+  
+  // Send via backend
+  fetch('/api/send', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ip: selectedDevice.ip, msg: text})
+  })
+  .then(r=>r.json())
+  .then(data=>{
+    if (data.status === 'sent') {
+      setStatus(`✅ Sent to ${selectedDevice.name}`, 'success');
+    }
+  })
+  .catch(e=>setStatus('❌ Send failed', 'error'));
+  
+  document.getElementById("chatInput").value = "";
+}
+
+// ===== NAVIGATION =====
+function goBack() {
+  document.getElementById("chatScreen").style.display = "none";
+  document.getElementById("connectScreen").style.display = "block";
+  setStatus('Disconnected', 'info');
+}
+
+// ===== AUTO SCAN ON LOAD =====
+window.onload = () => {
+  setTimeout(scan, 1000);
+  setStatus('Ready! Click Scan Devices', 'success');
+};
+</script>
+</body>
+</html>
